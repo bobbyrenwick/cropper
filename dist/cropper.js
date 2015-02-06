@@ -69,7 +69,7 @@
       toArray = function (obj, offset) {
         var args = [];
 
-        if (typeof offset === "number") { // It's necessary for IE8
+        if (isNumber(offset)) { // It's necessary for IE8
           args.push(offset);
         }
 
@@ -393,11 +393,12 @@
     },
 
     initContainer: function () {
-      var $container = this.$container;
+      var $container = this.$container,
+          defaults = this.defaults;
 
       this.container = {
-        width: max($container.width(), 300),
-        height: max($container.height(), 150)
+        width: max($container.width(), defaults.minContainerWidth),
+        height: max($container.height(), defaults.minContainerHeight)
       };
     },
 
@@ -549,8 +550,10 @@
 
       // Center the dragger by default
       autoCropDragger = $.extend({}, dragger);
-      autoCropDragger.height = dragger.height * defaults.autoCropArea;
-      autoCropDragger.width = dragger.width * defaults.autoCropArea;
+
+      // The width of auto crop area must large than minWidth, and the height too. (#164)
+      autoCropDragger.width = max(dragger.minWidth, dragger.width * defaults.autoCropArea);
+      autoCropDragger.height = max(dragger.minHeight, dragger.height * defaults.autoCropArea);
       autoCropDragger.left = (cropper.width - autoCropDragger.width) / 2;
       autoCropDragger.top = (cropper.height - autoCropDragger.height) / 2;
 
@@ -779,6 +782,7 @@
         if (this.built) {
           this.initDragger();
           this.renderDragger();
+          this.setData(this.defaults.data); // Reset to initial state
         }
       }
     },
@@ -972,11 +976,7 @@
 
     wheel: function (event) {
       var e = event.originalEvent,
-          msDeltaY = 117.25, // IE
-          mozDelatY = 5, // Firefox
-          webkitDelatY = 166.66665649414062, // Chrome, Opera
-          zoomDelta = 0.1, // 10%
-          delta;
+          delta = 1;
 
       if (this.disabled) {
         return;
@@ -985,13 +985,14 @@
       event.preventDefault();
 
       if (e.deltaY) {
-        delta = e.deltaY;
-        delta = delta % mozDelatY === 0 ? delta / mozDelatY : delta % msDeltaY === 0 ? delta / msDeltaY : delta / webkitDelatY;
-      } else {
-        delta = e.wheelDelta ? -e.wheelDelta / 120 : (e.detail ? e.detail / 3 : 0);
+        delta = e.deltaY > 0 ? 1 : -1;
+      } else if (e.wheelDelta) {
+        delta = -e.wheelDelta / 120;
+      } else if (e.detail) {
+        delta = e.detail > 0 ? 1 : -1;
       }
 
-      this.zoom(delta * zoomDelta);
+      this.zoom(delta * 0.1);
     },
 
     dragstart: function (event) {
@@ -1129,8 +1130,7 @@
           right = left + width,
           bottom = top + height,
           renderable = TRUE,
-          defaults = this.defaults,
-          aspectRatio = defaults.aspectRatio,
+          aspectRatio = this.defaults.aspectRatio,
           range = {
             x: this.endX - this.startX,
             y: this.endY - this.startY
@@ -1399,27 +1399,24 @@
           image.top += range.y;
           this.renderImage("move");
           renderable = FALSE;
-
           break;
 
         // Scale image
         case "zoom":
-          if (defaults.zoomable) {
-            this.zoom(function (x, y, x1, y1, x2, y2) {
-              return (sqrt(x2 * x2 + y2 * y2) - sqrt(x1 * x1 + y1 * y1)) / sqrt(x * x + y * y);
-            }(
-              image.width,
-              image.height,
-              abs(this.startX - this.startX2),
-              abs(this.startY - this.startY2),
-              abs(this.endX - this.endX2),
-              abs(this.endY - this.endY2)
-            ));
+          this.zoom(function (x, y, x1, y1, x2, y2) {
+            return (sqrt(x2 * x2 + y2 * y2) - sqrt(x1 * x1 + y1 * y1)) / sqrt(x * x + y * y);
+          }(
+            image.width,
+            image.height,
+            abs(this.startX - this.startX2),
+            abs(this.startY - this.startY2),
+            abs(this.endX - this.endX2),
+            abs(this.endY - this.endY2)
+          ));
 
-            this.endX2 = this.startX2;
-            this.endY2 = this.startY2;
-          }
-
+          this.endX2 = this.startX2;
+          this.endY2 = this.startY2;
+          renderable = FALSE;
           break;
 
         // Crop image
@@ -1539,6 +1536,8 @@
     minHeight: 0,
     maxWidth: INFINITY,
     maxHeight: INFINITY,
+    minContainerWidth: 300,
+    minContainerHeight: 150,
 
     // Events
     build: NULL,
